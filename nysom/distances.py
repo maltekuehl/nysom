@@ -101,9 +101,9 @@ def manhattan_distance(x, w, xp=default_xp):
         start = time.time()
         d = xp.empty((x.shape[0], n_weights))
         manhattan_kernel(
-            (n_samples,n_weights,n_weights), # the x, y and z block dimensions
+            (n_samples,n_weights,n_dims), # the x, y and z block dimensions
             (1,), # a single thread
-            (x, w.reshape(-1, n_dims), d, n_samples, n_weights, n_weights),
+            (x, w.reshape(-1, n_dims), d, n_samples, n_weights, n_dims),
         )
         end = time.time()
         print(end - start)
