@@ -17,8 +17,8 @@ except:
     print("WARNING: CuPy could not be imported")
     default_xp = np
 
-from .distances import cosine_distance, manhattan_distance, euclidean_squared_distance, euclidean_squared_distance_part, euclidean_distance
-from .neighborhoods import gaussian_generic, gaussian_rect, mexican_hat_generic, mexican_hat_rect, bubble, triangle, prepare_neig_func
+from .distances import manhattan_distance, manhattan_distance_legacy, euclidean_squared_distance_part, euclidean_distance
+from .neighborhoods import gaussian_rect, bubble, triangle, prepare_neig_func
 from .utils import find_cpu_cores, find_max_cuda_threads
 from .decays import linear_decay, asymptotic_decay, exponential_decay
 
@@ -101,7 +101,7 @@ class XPySom:
 
         neighborhood_function : string, optional (default='gaussian')
             Function that weights the neighborhood of a position in the map.
-            Possible values: 'gaussian', 'mexican_hat', 'bubble', 'triangle'
+            Possible values: 'gaussian'
 
         topology : string, optional (default='rectangular')
             Topology of the map.
@@ -131,7 +131,6 @@ class XPySom:
             Cut the neighbor function to 0 beyond neighbor radius sigma
 
         """
-
         if sigma >= x or sigma >= y:
             warn('Warning: sigma is too high for the dimension of the map.')
 
@@ -169,42 +168,17 @@ class XPySom:
         self._xx = self._xx.astype(float)
         self._yy = self._yy.astype(float)
 
-        if topology == 'hexagonal':
-            self._xx[::-2] -= 0.5
-            if neighborhood_function in ['triangle']:
-                warn('triangle neighborhood function does not ' +
-                     'take in account hexagonal topology')
-
-        decay_functions = {
-            'exponential': exponential_decay,
-            'asymptotic': asymptotic_decay,
-            'linear': linear_decay
-        }
-
-        if decay_function not in decay_functions:
-            msg = '%s not supported. Functions available: %s'
-            raise ValueError(msg % (decay_function,
-                                    ', '.join(decay_functions.keys())))
-
-        self._decay_function = decay_functions[decay_function]
+        self._decay_function = exponential_decay
 
         self.compact_support = compact_support
 
-        neig_functions = self.get_neig_functions()
-
-        if neighborhood_function not in neig_functions:
-            msg = '%s not supported. Functions available: %s'
-            raise ValueError(msg % (neighborhood_function,
-                                    ', '.join(neig_functions.keys())))
-
-        self.neighborhood = neig_functions[neighborhood_function]
+        self.neighborhood = self.get_neig_functions()[neighborhood_function]
         self.neighborhood_func_name = neighborhood_function
 
         distance_functions = {
             'euclidean': euclidean_squared_distance_part,
-            'euclidean_no_opt': euclidean_squared_distance,
             'manhattan': manhattan_distance,
-            'cosine': cosine_distance,
+            'manhattan_legacy': manhattan_distance_legacy,
         }
 
         if activation_distance not in distance_functions:
@@ -238,30 +212,9 @@ class XPySom:
         Returns a dictionary (func_name, prepared_func)
         Call this only after setting neigx, neigy, xx, yy.
         """
-        if self.topology == 'rectangular':
-            neig_functions = {
-                'gaussian': prepare_neig_func(
-                    gaussian_rect, self._neigx, self._neigy, self._std_coeff, self.compact_support),
-                'mexican_hat': prepare_neig_func(
-                    mexican_hat_rect, self._neigx, self._neigy, self._std_coeff, self.compact_support),
-                'bubble': prepare_neig_func(
-                    bubble, self._neigx, self._neigy),
-                'triangle': prepare_neig_func(
-                    triangle, self._neigx, self._neigy, self.compact_support),
-            }
-        elif self.topology == 'hexagonal':
-            neig_functions = {
-                'gaussian': prepare_neig_func(
-                    gaussian_generic, self._xx, self._yy, self._std_coeff, self.compact_support),
-                'mexican_hat': prepare_neig_func(
-                    mexican_hat_generic, self._xx, self._yy, self._std_coeff, self.compact_support),
-                'bubble': prepare_neig_func(
-                    bubble, self._neigx, self._neigy),
-            }
-        else:
-            neig_functions = {}
-        
-        return neig_functions
+        return {
+            'gaussian': prepare_neig_func(gaussian_rect, self._neigx, self._neigy, self._std_coeff, self.compact_support),
+        }
 
 
     def get_weights(self):
@@ -318,19 +271,11 @@ class XPySom:
         if len(x_gpu.shape) == 1:
             x_gpu = self.xp.expand_dims(x_gpu, axis=0)
 
-        if self._sq_weights_gpu is not None:
-            self._activation_map_gpu = self._activation_distance(
-                    x_gpu, 
-                    self._weights_gpu,
-                    self._sq_weights_gpu,
-                    xp=self.xp
-            )
-        else:
-            self._activation_map_gpu = self._activation_distance(
-                    x_gpu, 
-                    self._weights_gpu,
-                    xp=self.xp
-            )
+        self._activation_map_gpu = self._activation_distance(
+                x_gpu, 
+                self._weights_gpu,
+                xp=self.xp
+        )
 
 
     def _check_iteration_number(self, num_iteration):
@@ -350,7 +295,6 @@ class XPySom:
     def winner(self, x):
         """Computes the coordinates of the winning neurons for the samples x.
         """
-
         x_gpu = self.xp.array(x)
         self._weights_gpu = self.xp.array(self._weights)
 
@@ -474,21 +418,7 @@ class XPySom:
                     dtype=self.xp.float32
                 )
 
-            if self._activation_distance in [
-                    euclidean_squared_distance,
-                    euclidean_squared_distance_part,
-                    cosine_distance
-            ]:
-                self._sq_weights_gpu = (
-                    self.xp.power(
-                        self._weights_gpu.reshape(
-                            -1, self._weights_gpu.shape[2]
-                        ),
-                        2
-                    ).sum(axis=1, keepdims=True)
-                )
-            else:
-                self._sq_weights_gpu = None
+            self._sq_weights_gpu = None
 
             eta = self._decay_function(self._learning_rate, self._learning_rateN, iteration, num_epochs)
             # sigma and learning rate decrease with the same rule
@@ -666,33 +596,6 @@ class XPySom:
             self._weights[it.multi_index] = data[rand_i]
             it.iternext()
 
-
-    def pca_weights_init(self, data):
-        """Initializes the weights to span the first two principal components.
-
-        This initialization doesn't depend on random processes and
-        makes the training process converge faster.
-
-        It is strongly reccomended to normalize the data before initializing
-        the weights and use the same normalization for the training data.
-
-        TODO: unoptimized
-        """
-        if self._input_len == 1:
-            msg = 'The data needs at least 2 features for pca initialization'
-            raise ValueError(msg)
-        self._check_input_len(data)
-        if len(self._neigx) == 1 or len(self._neigy) == 1:
-            msg = 'PCA initialization inappropriate:' + \
-                  'One of the dimensions of the map is 1.'
-            warn(msg)
-        pc_length, pc = np.linalg.eig(np.cov(np.transpose(data)))
-        pc_order = np.argsort(-pc_length)
-        for i, c1 in enumerate(np.linspace(-1, 1, len(self._neigx))):
-            for j, c2 in enumerate(np.linspace(-1, 1, len(self._neigy))):
-                self._weights[i, j] = c1*pc[pc_order[0]] + c2*pc[pc_order[1]]
-
-
     def distance_map(self):
         """Returns the distance map of the weights.
         Each cell is the normalised sum of the distances between
@@ -706,10 +609,6 @@ class XPySom:
 
         ii = [[0, -1, -1, -1, 0, 1, 1, 1]]*2
         jj = [[-1, -1, 0, 1, 1, 1, 0, -1]]*2
-
-        if self.topology == 'hexagonal':
-            ii = [[1, 1, 1, 0, -1, 0], [0, 1, 0, -1, -1, -1]]
-            jj = [[1, 0, -1, -1, 0, 1], [1, 0, -1, -1, 0, 1]]
 
         for x in range(self._weights.shape[0]):
             for y in range(self._weights.shape[1]):

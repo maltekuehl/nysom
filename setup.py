@@ -10,7 +10,7 @@ with open(path.join(this_directory, 'Readme.md'), encoding='utf-8') as f:
 description = 'Minimalistic implementation of batch Self Organizing Maps (SOM) for parallel execution on CPU or GPU.'
 keywords = ['machine learning', 'neural networks', 'clustering', 'dimentionality reduction']
 
-setup(name='XPySom',
+setup(name='NYSom',
       version='1.0.7',
       description=description,
       long_description=long_description,
@@ -20,7 +20,7 @@ setup(name='XPySom',
       package_data={'': ['Readme.md']},
       include_package_data=True,
       license="GNU General Public License v3.0",
-      packages=['xpysom'],
+      packages=['nysom'],
       install_requires=['numpy'],
       extras_require={
             'cuda90': ['cupy-cuda90'],

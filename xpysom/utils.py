@@ -12,7 +12,6 @@ def find_max_cuda_threads():
         print("Cupy is not available.")
         return 0
     try:
-        
         return int(subprocess.check_output("nvidia-settings -q CUDACores -t", shell=True))
     except:
         print("Could not infer #cuda_cores")
