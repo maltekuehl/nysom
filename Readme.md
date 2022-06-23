@@ -1,4 +1,6 @@
-<h1>XPySom</h1>
+<h1>NYSom</h1>
+
+NYSom is the New York version of [XPySom](https://github.com/Manciukic/xpysom/), meaning it focusses on the Manhattan distance version with a custom kernel and removes unnecessary parts for better performance.
 
 Self Organizing Maps
 --------------------

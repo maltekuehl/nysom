@@ -18,9 +18,9 @@ except:
     default_xp = np
 
 from .distances import manhattan_distance, manhattan_distance_legacy, euclidean_squared_distance_part, euclidean_distance
-from .neighborhoods import gaussian_rect, bubble, triangle, prepare_neig_func
+from .neighborhoods import gaussian_rect, prepare_neig_func
 from .utils import find_cpu_cores, find_max_cuda_threads
-from .decays import linear_decay, asymptotic_decay, exponential_decay
+from .decays import exponential_decay
 
 # In my machine it looks like these are the best performance/memory trade-off.
 # As a rule of thumb, executing more items at a time does not decrease 
@@ -54,14 +54,23 @@ def print_progress(t, T):
 
 
 class XPySom:
-    def __init__(self, x, y, input_len, 
-                 sigma=0, sigmaN=1, 
-                 learning_rate=0.5, learning_rateN=0.01, decay_function='exponential',
-                 neighborhood_function='gaussian', std_coeff=0.5, 
-                 topology='rectangular', 
-                 activation_distance='euclidean', 
-                 random_seed=None, n_parallel=0, compact_support=False,
-                 xp=default_xp):
+    def __init__(self,
+        x,
+        y,
+        input_len, 
+        sigma=0, sigmaN=1, 
+        learning_rate=0.5,
+        learning_rateN=0.01,
+        decay_function='exponential',
+        neighborhood_function='gaussian',
+        std_coeff=0.5, 
+        topology='rectangular', 
+        activation_distance='manhattan', 
+        random_seed=None,
+        n_parallel=0,
+        compact_support=False,
+        xp=default_xp,
+    ):
         """Initializes a Self Organizing Maps.
 
         A rule of thumb to set the size of the grid for a dimensionality
