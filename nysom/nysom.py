@@ -53,7 +53,7 @@ def print_progress(t, T):
         stdout.write(progress)
 
 
-class NYSOM:
+class NYSom:
     def __init__(self,
         x,
         y,
