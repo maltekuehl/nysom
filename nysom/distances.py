@@ -72,10 +72,10 @@ def manhattan_distance_legacy(x, w, xp=default_xp):
 if _cupy_available:
     manhattan_kernel = cp.RawKernel(r'''
     extern "C" __global__
-    void l1_norm(const float* pixels, const float* weights, float* y, int n_samples, int n_weights, int n_dims) {
-        int idx_pixel = threadIdx.x + blockDim.x * blockIdx.x;
-        int idx_weight = threadIdx.y + blockDim.y * blockIdx.y;
-        int idx_dim = threadIdx.z + blockDim.z * blockIdx.z;
+    void l1_norm(const float* pixels, const float* weights, float* y, unsigned int n_samples, unsigned int n_weights, unsigned int n_dims) {
+        unsigned int idx_pixel = threadIdx.x + blockDim.x * blockIdx.x;
+        unsigned int idx_weight = threadIdx.y + blockDim.y * blockIdx.y;
+        unsigned int idx_dim = threadIdx.z + blockDim.z * blockIdx.z;
 
         if(idx_pixel < n_samples && idx_weight < n_weights && idx_dim < n_dims) {
             y[(idx_pixel * n_weights + idx_weight)] += fabsf(pixels[idx_pixel*n_dims+idx_dim] - weights[idx_weight*n_dims+idx_dim]);
@@ -83,26 +83,19 @@ if _cupy_available:
     }
     ''', 'l1_norm')
 
-def manhattan_distance(x, w, xp=default_xp):
+def manhattan_distance(x, w, n_samples, n_weights, n_dims, xp=default_xp):
     """Calculate Manhattan distance with a custom kernel.
 
     NB: result shape is (N,X*Y)
     """
 
     if xp.__name__ == 'cupy':
-        n_samples = x.shape[0]
-        n_dims = x.shape[1]
-        n_weights = w.reshape(-1, n_dims).shape[0]
-
-        # start = time.time()
-        d = xp.empty((x.shape[0], n_weights))
+        d = xp.empty((n_samples, n_weights))
         manhattan_kernel(
             (n_samples,n_weights,n_dims), # the x, y and z block dimensions
             (1,), # a single thread
             (x, w.reshape(-1, n_dims), d, n_samples, n_weights, n_dims),
         )
-        # end = time.time()
-        # print(end - start)
         return d.reshape(x.shape[0], w.shape[0]*w.shape[1])
     else:
         d = xp.linalg.norm(

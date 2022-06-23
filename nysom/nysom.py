@@ -68,7 +68,6 @@ class NYSom:
         activation_distance='manhattan', 
         random_seed=None,
         n_parallel=0,
-        compact_support=False,
         xp=default_xp,
     ):
         """Initializes a Self Organizing Maps.
@@ -112,13 +111,9 @@ class NYSom:
             Function that weights the neighborhood of a position in the map.
             Possible values: 'gaussian'
 
-        topology : string, optional (default='rectangular')
-            Topology of the map.
-            Possible values: 'rectangular', 'hexagonal'
-
         activation_distance : string, optional (default='euclidean')
             Distance used to activate the map.
-            Possible values: 'euclidean', 'cosine', 'manhattan'
+            Possible values: 'euclidean', 'manhattan'
 
         random_seed : int, optional (default=None)
             Random seed to use.
@@ -135,10 +130,6 @@ class NYSom:
         std_coeff: float, optional (default=0.5)
             Used to calculate gausssian exponent denominator: 
             d = 2*std_coeff**2*sigma**2
-
-        compact_support: bool, optional (default=False)
-            Cut the neighbor function to 0 beyond neighbor radius sigma
-
         """
         if sigma >= x or sigma >= y:
             warn('Warning: sigma is too high for the dimension of the map.')
@@ -166,11 +157,7 @@ class NYSom:
 
         # used to evaluate the neighborhood function
         self._neigx = self.xp.arange(x)
-        self._neigy = self.xp.arange(y)  
-
-        if topology not in ['hexagonal', 'rectangular']:
-            msg = '%s not supported only hexagonal and rectangular available'
-            raise ValueError(msg % topology)
+        self._neigy = self.xp.arange(y)
 
         self.topology = topology
         self._xx, self._yy = self.xp.meshgrid(self._neigx, self._neigy)
@@ -178,8 +165,6 @@ class NYSom:
         self._yy = self._yy.astype(float)
 
         self._decay_function = exponential_decay
-
-        self.compact_support = compact_support
 
         self.neighborhood = self.get_neig_functions()[neighborhood_function]
         self.neighborhood_func_name = neighborhood_function
@@ -189,11 +174,6 @@ class NYSom:
             'manhattan': manhattan_distance,
             'manhattan_legacy': manhattan_distance_legacy,
         }
-
-        if activation_distance not in distance_functions:
-            msg = '%s not supported. Distances available: %s'
-            raise ValueError(msg % (activation_distance,
-                                    ', '.join(distance_functions.keys())))
 
         self._activation_distance = distance_functions[activation_distance]
 
@@ -221,7 +201,7 @@ class NYSom:
         Call this only after setting neigx, neigy, xx, yy.
         """
         return {
-            'gaussian': prepare_neig_func(gaussian_rect, self._neigx, self._neigy, self._std_coeff, self.compact_support),
+            'gaussian': prepare_neig_func(gaussian_rect, self._neigx, self._neigy, self._std_coeff, False),
         }
 
 
@@ -276,9 +256,6 @@ class NYSom:
     def _activate(self, x_gpu):
         """Updates matrix activation_map, in this matrix
            the element i,j is the response of the neuron i,j to x"""
-        if len(x_gpu.shape) == 1:
-            x_gpu = self.xp.expand_dims(x_gpu, axis=0)
-
         self._activation_map_gpu = self._activation_distance(
                 x_gpu, 
                 self._weights_gpu,
@@ -456,45 +433,6 @@ class NYSom:
         del self._numerator_gpu
         del self._denominator_gpu
         del self._activation_map_gpu
-        
-        if verbose:
-            print('\n quantization error:', self.quantization_error(data))
-
-
-    def train_batch(self, data, num_iteration, verbose=False):
-        """Compatibility with MiniSom, alias for train"""
-        return self.train(data, num_iteration, verbose=verbose)
-
-
-    def train_random(self, data, num_iteration, verbose=False):
-        """Compatibility with MiniSom, alias for train"""
-        print("WARNING: due to batch SOM algorithm, random order is not supported. Falling back to train_batch.")
-        return self.train(data, num_iteration, verbose=verbose)
-
-
-    def quantization(self, data):
-        """Assigns a code book (weights vector of the winning neuron)
-        to each sample in data."""
-        
-        data_gpu = self.xp.array(data)
-        self._weights_gpu = self.xp.array(self._weights)
-        qnt = self._quantization(data_gpu)
-
-        del self._weights_gpu
-
-        if self.xp.__name__ == 'cupy':
-            return self.xp.asnumpy(qnt)
-        else:
-            return qnt
-
-
-    def _quantization(self, data_gpu):
-        """Assigns a code book (weights vector of the winning neuron)
-        to each sample in data."""
-        self._check_input_len(data_gpu)
-        winners_coords = self.xp.argmin(self._distance_from_weights(data_gpu), axis=1)
-        return self._weights_gpu[self.xp.unravel_index(winners_coords,
-                                           self._weights.shape[:2])]
 
     def distance_from_weights(self, data):
         """Returns a matrix d where d[i,j] is the euclidean distance between
@@ -524,71 +462,6 @@ class NYSom:
             distances.append(euclidean_distance(data_gpu[start:end], self._weights_gpu, xp=self.xp))
         return self.xp.vstack(distances)
 
-    def quantization_error(self, data):
-        """Returns the quantization error computed as the average
-        distance between each input sample and its best matching unit."""
-        self._check_input_len(data)
-
-        # load to GPU
-        data_gpu = self.xp.array(data, dtype=self.xp.float32)
-        self._weights_gpu = self.xp.array(self._weights)
-
-        # recycle buffer
-        data_gpu -= self._quantization(data_gpu) 
-
-        # free no longer needed buffer
-        del self._weights_gpu
-
-        qe = self.xp.linalg.norm(data_gpu, axis=1).mean()
-        
-        # free no longer needed buffer
-        del data_gpu
-
-        return qe.item()
-
-    def topographic_error(self, data):
-        """Returns the topographic error computed by finding
-        the best-matching and second-best-matching neuron in the map
-        for each input and then evaluating the positions.
-
-        A sample for which these two nodes are not ajacent conunts as
-        an error. The topographic error is given by the
-        the total number of errors divided by the total of samples.
-
-        If the topographic error is 0, no error occurred.
-        If 1, the topology was not preserved for any of the samples."""
-        self._check_input_len(data)
-        total_neurons = np.prod(self._weights.shape)
-        if total_neurons == 1:
-            warn('The topographic error is not defined for a 1-by-1 map.')
-            return np.nan
-
-        # load to GPU
-        data_gpu = self.xp.array(data, dtype=self.xp.float32)
-        self._weights_gpu = self.xp.array(self._weights)
-
-        distances = self._distance_from_weights(data_gpu) 
-
-        # free no longer needed buffers
-        self._weights_gpu = None
-        del data_gpu
-
-        # b2mu: best 2 matching units
-        b2mu_inds = self.xp.argsort(distances, axis=1)[:, :2]
-        b2my_xy = self.xp.unravel_index(b2mu_inds, self._weights.shape[:2])
-        if self.topology ==  'rectangular':
-            b2mu_x, b2mu_y = b2my_xy[0], b2my_xy[1]
-            diff_b2mu_x = self.xp.abs(self.xp.diff(b2mu_x))
-            diff_b2mu_y = self.xp.abs(self.xp.diff(b2mu_y))
-            return ((diff_b2mu_x > 1) | (diff_b2mu_y > 1)).mean().item()
-        elif self.topology == 'hexagonal':
-            b2mu_x = self._xx[b2my_xy[0], b2my_xy[1]]
-            b2mu_y = self._yy[b2my_xy[0], b2my_xy[1]]
-            dxdy = self.xp.hstack([self.xp.diff(b2mu_x), self.xp.diff(b2mu_y)])
-            distance = self.xp.linalg.norm(dxdy, axis=1)
-            return (distance > 1.5).mean().item()
-
-
     def random_weights_init(self, data):
         """Initializes the weights of the SOM
         picking random samples from data.
@@ -606,7 +479,7 @@ class NYSom:
         Each cell is the normalised sum of the distances between
         a neuron and its neighbours. Note that this method uses
         the euclidean distance.
-        TODO: unoptimized
+        TODO: unoptimized, use manhattan
         """
         um = np.zeros((self._weights.shape[0],
                     self._weights.shape[1],
@@ -675,28 +548,3 @@ class NYSom:
         for position in winmap:
             winmap[position] = Counter(winmap[position])
         return winmap
-
-
-    def __getstate__(self):
-        # Copy the object's state from self.__dict__ which contains
-        # all our instance attributes. Always use the dict.copy()
-        # method to avoid modifying the original state.
-        state = self.__dict__.copy()
-        # Remove the unpicklable entries.
-        del state['xp']
-        del state['neighborhood']
-        state['xp_name'] = self.xp.__name__
-        return state
-
-    def __setstate__(self, state):
-        # Restore instance attributes (i.e., filename and lineno).
-        self.__dict__.update(state)
-        try:
-            if self.xp_name == 'cupy':
-                self.xp = cp
-            elif self.xp_name == 'numpy':
-                self.xp = np
-        except:
-            self.xp = default_xp
-
-        self.neighborhood = self.get_neig_functions()[self.neighborhood_func_name]
