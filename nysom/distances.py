@@ -52,19 +52,14 @@ def manhattan_distance_legacy(x, w, xp=default_xp):
     """
 
     if xp.__name__ == 'cupy':
+        # start = time.time()
         d = _manhattan_distance_kernel(
             x[:,xp.newaxis,xp.newaxis,:], 
             w[xp.newaxis,:,:,:], 
             axis=3
         )
-        start = time.time()
-        d = _manhattan_distance_kernel(
-            x[:,xp.newaxis,xp.newaxis,:], 
-            w[xp.newaxis,:,:,:], 
-            axis=3
-        )
-        end = time.time()
-        print(end - start)
+        # end = time.time()
+        # print(end - start)
         return d.reshape(x.shape[0], w.shape[0]*w.shape[1])
     else:
         d = xp.linalg.norm(
@@ -98,15 +93,15 @@ def manhattan_distance(x, w, xp=default_xp):
         n_dims = x.shape[1]
         n_weights = w.reshape(-1, n_dims).shape[0]
 
-        start = time.time()
+        # start = time.time()
         d = xp.empty((x.shape[0], n_weights))
         manhattan_kernel(
             (n_samples,n_weights,n_dims), # the x, y and z block dimensions
             (1,), # a single thread
             (x, w.reshape(-1, n_dims), d, n_samples, n_weights, n_dims),
         )
-        end = time.time()
-        print(end - start)
+        # end = time.time()
+        # print(end - start)
         return d.reshape(x.shape[0], w.shape[0]*w.shape[1])
     else:
         d = xp.linalg.norm(
