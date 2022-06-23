@@ -202,7 +202,6 @@ class NYSom:
         # this will be used to point to device memory
         # NB: if xp is numpy, then it will just be a pointer to _weights
         self._weights_gpu = None
-        self._sq_weights_gpu = None
 
         if n_parallel == 0:
             if self.xp.__name__ == 'cupy':
@@ -427,8 +426,6 @@ class NYSom:
                     dtype=self.xp.float32
                 )
 
-            self._sq_weights_gpu = None
-
             eta = self._decay_function(self._learning_rate, self._learning_rateN, iteration, num_epochs)
             # sigma and learning rate decrease with the same rule
             sig = self._decay_function(self._sigma, self._sigmaN, iteration, num_epochs)
@@ -456,7 +453,6 @@ class NYSom:
             self._weights = self._weights_gpu
         
         # free temporary memory
-        self._sq_weights_gpu = None
         del self._numerator_gpu
         del self._denominator_gpu
         del self._activation_map_gpu

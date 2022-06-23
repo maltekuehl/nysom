@@ -77,8 +77,9 @@ if _cupy_available:
         int idx_weight = threadIdx.y + blockDim.y * blockIdx.y;
         int idx_dim = threadIdx.z + blockDim.z * blockIdx.z;
 
-        if(idx_pixel < n_samples && idx_weight < n_weights && idx_dim < n_dims)
-        y[(idx_pixel * n_weights + idx_weight)] += fabsf(pixels[idx_pixel*n_dims+idx_dim] - weights[idx_weight*n_dims+idx_dim]);
+        if(idx_pixel < n_samples && idx_weight < n_weights && idx_dim < n_dims) {
+            y[(idx_pixel * n_weights + idx_weight)] += fabsf(pixels[idx_pixel*n_dims+idx_dim] - weights[idx_weight*n_dims+idx_dim]);
+        }
     }
     ''', 'l1_norm')
 
