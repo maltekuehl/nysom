@@ -94,7 +94,7 @@ def manhattan_distance(x, w, xp=default_xp):
         manhattan_kernel(
             (n_samples,n_weights,n_weights), # the x, y and z block dimensions
             (1,), # a single thread
-            (pixels, weights.reshape(-1, n_dims), d, n_samples, n_weights, n_weights),
+            (x, w.reshape(-1, n_dims), d, n_samples, n_weights, n_weights),
         )
         return d.reshape(x.shape[0], w.shape[0]*w.shape[1])
     else:
