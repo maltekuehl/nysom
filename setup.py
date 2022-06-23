@@ -11,7 +11,7 @@ description = 'Minimalistic implementation of batch Self Organizing Maps (SOM) f
 keywords = ['machine learning', 'neural networks', 'clustering', 'dimentionality reduction']
 
 setup(name='NYSom',
-      version='1.0.7',
+      version='1.0.8',
       description=description,
       long_description=long_description,
       long_description_content_type="text/markdown",
